@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>スクショ年表日記</title>
+  <style>
+    /* Ultra Minimal Sky Theme */
+    :root {
+      --bg-color: #F0F9FF;
+      --card-bg: rgba(255, 255, 255, 0.75);
+      --border-color: rgba(56, 189, 248, 0.2);
+      --accent-color: #0284C7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --text-main: #0F172A;
+      --text-sub: #94A3B8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      letter-spacing: -0.01em;
+    }
+
+    body {
+      background-color: #E0F2FE;
+      background-image: radial-gradient(circle at 50% 0%, #E0F2FE 0%, #F0F9FF 70%, #E0E7FF 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* アプリ容器 */
+    .app-container {
+      width: 100%;
+      max-width: 440px;
+      min-height: 100vh;
+      background: rgba(240, 249, 255, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 20px 50px rgba(2, 132, 199, 0.08);
+      border-left: 1px solid rgba(255, 255, 255, 0.6);
+      border-right: 1px solid rgba(255, 255, 255, 0.6);
+    }
+
+    /* ヘッダー */
+    header {
+      display: flex;
+      align-items: center;
+      padding: 16px;
+      background: rgba(240, 249, 255, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .tab-scroll-area {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      flex: 1;
+      padding-right: 8px;
+    }
+
+    .tab-scroll-area::-webkit-scrollbar {
+      display: none;
+    }
+
+    .tab {
+      padding: 8px 16px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      color: var(--text-sub);
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      flex-shrink: 0;
+    }
+
+    .tab.active {
+      background: var(--accent-color);
+      border-color: var(--accent-color);
+      color: #FFF;
+      font-weight: 600;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25);
+    }
+
+    .tab-manage-fixed {
+      width: 36px;
+      height: 36px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid var(--border-color);
+      color: var(--accent-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+    }
+
+    .tab-manage-fixed:active {
+      transform: scale(0.92);
+    }
+
+    /* メインエリア */
+    main {
+      flex: 1;
+      padding: 32px 20px 100px;
+      width: 100%;
+    }
+
+    .timeline {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* タイムライン縦軸ライン */
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 51px;
+      top: 10px;
+      bottom: 10px;
+      width: 2px;
+      background: linear-gradient(180deg, #38BDF8 0%, rgba(56, 189, 248, 0.2) 100%);
+      z-index: 1;
+    }
+
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* 他作品のみの日は極小ドットのみ */
+    .timeline-item.other-game .badge {
+      width: 8px;
+      height: 8px;
+      margin-left: 6px;
+      background: #CBD5E1;
+      box-shadow: 0 0 0 4px rgba(240, 249, 255, 0.9);
+    }
+
+    .date-axis {
+      width: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      padding-top: 1px;
+    }
+
+    .date-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-sub);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .badge {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      color: #FFF;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 4px rgba(240, 249, 255, 0.9);
+      z-index: 3;
+    }
+
+    .content {
+      flex: 1;
+    }
+
+    .photo-gallery {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .photo-gallery::-webkit-scrollbar {
+      display: none;
+    }
+
+    .photo-card {
+      min-width: 100%;
+      background: var(--card-bg);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.06);
+      transition: transform 0.2s ease;
+    }
+
+    .photo-card img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-sub);
+      padding: 80px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.6;
+    }
+
+    /* フローティング追加ボタン */
+    .fab {
+      position: fixed;
+      bottom: 32px;
+      right: calc(50% - 220px + 24px);
+      width: 56px;
+      height: 56px;
+      border-radius: 28px;
+      background: var(--accent-color);
+      color: #FFF;
+      border: none;
+      box-shadow: 0 10px 28px rgba(2, 132, 199, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 20;
+    }
+
+    @media (max-width: 440px) {
+      .fab {
+        right: 24px;
+      }
+    }
+
+    .fab:active {
+      transform: scale(0.90);
+    }
+
+    /* 作品管理モーダル */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.2);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-card {
+      background: rgba(255, 255, 255, 0.9);
+      width: 100%;
+      max-width: 380px;
+      max-height: 75vh;
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .modal-close-btn {
+      background: none;
+      border: none;
+      font-size: 18px;
+      color: var(--text-sub);
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .add-game-box {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .modal-input {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.8);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .modal-input:focus {
+      border-color: var(--accent-color);
+    }
+
+    .add-btn-primary {
+      padding: 12px 18px;
+      border-radius: 14px;
+      background: var(--accent-color);
+      color: #FFF;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .game-list {
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .game-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(226, 232, 240, 0.8);
+      border-radius: 16px;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .drag-handle {
+      font-size: 16px;
+      color: #CBD5E1;
+      touch-action: none;
+    }
+
+    .game-item-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+      flex: 1;
+    }
+
+    .action-btn {
+      padding: 6px 12px;
+      border-radius: 10px;
+      border: 1px solid #E2E8F0;
+      background: #FFF;
+      font-size: 12px;
+      color: var(--text-sub);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <header>
+      <div class="tab-scroll-area" id="tab-container"></div>
+      <button class="tab-manage-fixed" id="manage-btn" title="作品管理">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+    </header>
+
+    <main>
+      <div id="timeline" class="timeline">
+        <div id="empty-state" class="empty-state">
+          ＋ からスクショを追加
+        </div>
+      </div>
+    </main>
+
+    <input type="file" id="file-input" accept="image/*" style="display: none;" multiple>
+    
+    <button id="add-btn" class="fab" title="スクショを追加">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+  </div>
+
+  <!-- 作品管理モーダル -->
+  <div class="modal-overlay" id="game-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">作品の管理</div>
+        <button class="modal-close-btn" id="modal-close-btn">✕</button>
+      </div>
+
+      <div class="add-game-box">
+        <input type="text" class="modal-input" id="game-title-input" placeholder="作品名">
+        <button class="add-btn-primary" id="add-game-action">追加</button>
+      </div>
+
+      <div class="game-list" id="game-list"></div>
+    </div>
+  </div>
+
+  <script>
+    let gameList = ["作品AAA", "作品BBB", "作品CCC"];
+    let currentTab = "ALL";
+    const recordsByDate = {};
+
+    const timeline = document.getElementById('timeline');
+    const emptyState = document.getElementById('empty-state');
+    const tabContainer = document.getElementById('tab-container');
+    const addBtn = document.getElementById('add-btn');
+    const fileInput = document.getElementById('file-input');
+
+    const manageBtn = document.getElementById('manage-btn');
+    const gameModal = document.getElementById('game-modal');
+    const modalCloseBtn = document.getElementById('modal-close-btn');
+    const addGameAction = document.getElementById('add-game-action');
+    const gameTitleInput = document.getElementById('game-title-input');
+    const gameListContainer = document.getElementById('game-list');
+
+    manageBtn.addEventListener('click', () => {
+      renderGameListModal();
+      gameModal.style.display = 'flex';
+    });
+
+    modalCloseBtn.addEventListener('click', () => {
+      gameModal.style.display = 'none';
+    });
+
+    addGameAction.addEventListener('click', () => {
+      const title = gameTitleInput.value.trim();
+      if (title) {
+        gameList.push(title);
+        gameTitleInput.value = '';
+        renderGameListModal();
+        renderTabs();
+      }
+    });
+
+    function renderGameListModal() {
+      gameListContainer.innerHTML = '';
+      gameList.forEach((game, index) => {
+        const item = document.createElement('div');
+        item.className = 'game-item';
+        item.innerHTML = `
+          <span class="drag-handle">≡</span>
+          <span class="game-item-title">${game}</span>
+          <button class="action-btn" onclick="editGame(${index})">編集</button>
+        `;
+        gameListContainer.appendChild(item);
+      });
+    }
+
+    window.editGame = function(index) {
+      const newName = prompt('作品名を編集', gameList[index]);
+      if (newName && newName.trim()) {
+        const oldName = gameList[index];
+        const updatedName = newName.trim();
+        gameList[index] = updatedName;
+        
+        Object.keys(recordsByDate).forEach(date => {
+          if (recordsByDate[date][oldName]) {
+            recordsByDate[date][updatedName] = recordsByDate[date][oldName];
+            delete recordsByDate[date][oldName];
+          }
+        });
+
+        if (currentTab === oldName) currentTab = updatedName;
+        renderGameListModal();
+        renderTabs();
+        renderTimeline();
+      }
+    };
+
+    function renderTabs() {
+      tabContainer.innerHTML = '';
+      
+      const allTab = document.createElement('div');
+      allTab.className = `tab ${currentTab === 'ALL' ? 'active' : ''}`;
+      allTab.textContent = 'ALL';
+      allTab.onclick = () => switchTab('ALL');
+      tabContainer.appendChild(allTab);
+
+      gameList.forEach(game => {
+        const tab = document.createElement('div');
+        tab.className = `tab ${currentTab === game ? 'active' : ''}`;
+        tab.textContent = game;
+        tab.onclick = () => switchTab(game);
+        tabContainer.appendChild(tab);
+      });
+    }
+
+    function switchTab(tabName) {
+      currentTab = tabName;
+      renderTabs();
+      renderTimeline();
+    }
+
+    addBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (event) => {
+      const files = Array.from(event.target.files);
+      if (files.length === 0) return;
+
+      const today = new Date();
+      const dateKey = `${today.getMonth() + 1}/${today.getDate()}`;
+      const targetGame = (currentTab === 'ALL') ? (gameList[0] || '未分類') : currentTab;
+
+      if (!recordsByDate[dateKey]) recordsByDate[dateKey] = {};
+      if (!recordsByDate[dateKey][targetGame]) recordsByDate[dateKey][targetGame] = [];
+
+      files.forEach(file => {
+        const imageUrl = URL.createObjectURL(file);
+        recordsByDate[dateKey][targetGame].push(imageUrl);
+      });
+
+      renderTimeline();
+      fileInput.value = '';
+    });
+
+    function renderTimeline() {
+      const allDates = Object.keys(recordsByDate);
+
+      if (allDates.length === 0) {
+        emptyState.style.display = 'block';
+        timeline.innerHTML = '';
+        return;
+      }
+
+      emptyState.style.display = 'none';
+      timeline.innerHTML = '';
+
+      allDates.forEach((dateStr, index) => {
+        const gamesOnDate = recordsByDate[dateStr];
+        let imagesToShow = [];
+
+        if (currentTab === 'ALL') {
+          Object.keys(gamesOnDate).forEach(g => {
+            imagesToShow.push(...gamesOnDate[g]);
+          });
+        } else {
+          if (gamesOnDate[currentTab] && gamesOnDate[currentTab].length > 0) {
+            imagesToShow = gamesOnDate[currentTab];
+          }
+        }
+
+        let blockGapPx = (index < allDates.length - 1) ? 32 : 0;
+
+        const el = document.createElement('div');
+        const isThisGameActive = imagesToShow.length > 0;
+        el.className = `timeline-item ${isThisGameActive ? '' : 'other-game'}`;
+        el.style.marginBottom = `${blockGapPx}px`;
+
+        if (isThisGameActive) {
+          const galleryHtml = imagesToShow.map(url => `
+            <div class="photo-card">
+              <img src="${url}" alt="">
+            </div>
+          `).join('');
+
+          el.innerHTML = `
+            <div class="date-axis">
+              <span class="date-label">${dateStr}</span>
+              <div class="badge">${imagesToShow.length}</div>
+            </div>
+            <div class="content">
+              <div class="photo-gallery">${galleryHtml}</div>
+            </div>
+          `;
+        } else {
+          /* 他作品のみの日は文字なし、ドットのみ */
+          el.innerHTML = `
+            <div class="date-axis">
+              <span class="date-label">${dateStr}</span>
+              <div class="badge"></div>
+            </div>
+            <div class="content"></div>
+          `;
+        }
+
+        timeline.appendChild(el);
+      });
+    }
+
+    renderTabs();
+  </script>
+
+</body>
+</html>
