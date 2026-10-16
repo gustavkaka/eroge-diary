@@ -1,8 +1,12 @@
 {
   "name": "スクショ年表日記",
   "short_name": "年表日記",
+  "description": "スクショ1枚で記録する作品別年表日記",
+  "id": "./index.html",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#F0F9FF",
   "theme_color": "#0284C7",
   "icons": [
